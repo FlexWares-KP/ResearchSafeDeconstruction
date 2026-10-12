@@ -1,11 +1,11 @@
 ## Title: Research Safe Deconstruction
 ## Description: Marks deconstruction items that are safe for research across all selected characters
 ## Author: FlexWares Gaming
-## Version: 1.2.4
-## AddOnVersion: 10006
+## Version: 1.3.0
+## AddOnVersion: 10007
 ## APIVersion: 101050 101051 101052
 ## SavedVariables: ResearchSafeDeconstructionSavedVariables
 ## DependsOn: LibCharacterKnowledge>=301020
-## OptionalDependsOn: LibAddonMenu-2.0 LibCustomIcons
+## OptionalDependsOn: LibAddonMenu-2.0
 
 ResearchSafeDeconstruction.lua

@@ -15,11 +15,6 @@ local DECONSTRUCTION_LIST_NAMES = {
 }
 
 local INDICATOR_TEXTURE = "esoui/art/buttons/radiobuttondown.dds"
-local LCI_ICON_CANDIDATES = {
-	safe = { "@Safeplace", "@bookishpi" },
-	unsafe = { "@M0RTARI0N", "@Black'Blade" },
-	overflow = { "@F0restDragon", "@CertifiedSiIIyGoose" },
-}
 local INDICATOR_SIZE = 18
 local INDICATOR_OFFSET_X = -32
 local CHARACTER_ROW_HEIGHT = 28
@@ -75,12 +70,24 @@ local COLOR_UNSAFE = { 1, 0.2, 0.2, 1 }
 local COLOR_OVERFLOW = { 1, 0.85, 0.1, 1 }
 local COLOR_RESEARCHING = { 1, 0.75, 0.15, 1 }
 local COLOR_NORMAL = { 1, 1, 1, 1 }
-local libCustomIconsCache
+
+local function IsExcludedTrait(traitType)
+	return traitType == ITEM_TRAIT_TYPE_WEAPON_INTRICATE
+		or traitType == ITEM_TRAIT_TYPE_WEAPON_ORNATE
+		or traitType == ITEM_TRAIT_TYPE_ARMOR_INTRICATE
+		or traitType == ITEM_TRAIT_TYPE_ARMOR_ORNATE
+		or traitType == ITEM_TRAIT_TYPE_JEWELRY_INTRICATE
+		or traitType == ITEM_TRAIT_TYPE_JEWELRY_ORNATE
+end
 
 ResearchSafeDeconstruction = {
 	vars = nil,
 	lckReady = false,
 	hookedLists = {},
+	hookedInventories = {},
+	hookedScenes = {},
+	smithingModeHooked = false,
+	stationHookWarningShown = false,
 	statusCache = {},
 	researchItemsByKey = nil,
 	researchItemAllocations = nil,
@@ -89,46 +96,6 @@ ResearchSafeDeconstruction = {
 }
 
 local addon = ResearchSafeDeconstruction
-
-local function GetLibCustomIcon(iconCandidates)
-	local lib = _G["LibCustomIcons"]
-	if not lib or type(lib.HasStatic) ~= "function" or type(lib.GetStatic) ~= "function" then
-		return nil
-	end
-
-	for _, iconName in ipairs(iconCandidates) do
-		if lib.HasStatic(iconName) then
-			local texture, left, right, top, bottom = lib.GetStatic(iconName)
-			if texture and texture ~= "" then
-				return {
-					texture = texture,
-					left = left or 0,
-					right = right or 1,
-					top = top or 0,
-					bottom = bottom or 1,
-				}
-			end
-		end
-	end
-
-	return nil
-end
-
-local function GetIndicatorIcon(state)
-	if not libCustomIconsCache and _G["LibCustomIcons"] then
-		libCustomIconsCache = {}
-		for iconState, iconCandidates in pairs(LCI_ICON_CANDIDATES) do
-			libCustomIconsCache[iconState] = GetLibCustomIcon(iconCandidates)
-		end
-	end
-
-	local customIcon = libCustomIconsCache and libCustomIconsCache[state]
-	if customIcon then
-		return customIcon.texture, customIcon.left, customIcon.right, customIcon.top, customIcon.bottom
-	end
-
-	return INDICATOR_TEXTURE, 0, 1, 0, 1
-end
 
 local function AddTooltipLine(text, color)
 	local r, g, b = color[1], color[2], color[3]
@@ -193,6 +160,16 @@ end
 
 function addon:GetSlotKey(bagId, slotIndex)
 	return tostring(bagId) .. ":" .. tostring(slotIndex)
+end
+
+function addon:InvalidateCaches()
+	self.statusCache = {}
+	self.researchItemsByKey = nil
+	self.researchItemAllocations = nil
+end
+
+function addon:IsListVisible(list)
+	return type(list.IsHidden) ~= "function" or not list:IsHidden()
 end
 
 function addon:GetAvailableResearchItems()
@@ -514,7 +491,7 @@ function addon:RegisterSettings()
 		type = "panel",
 		name = TITLE,
 		author = "FlexWares Gaming",
-		version = "1.2.4",
+		version = "1.3.0",
 		registerForRefresh = true,
 	})
 
@@ -588,6 +565,10 @@ end
 
 function addon:GetResearchIndices(itemLink)
 	local traitType = GetItemLinkTraitType(itemLink)
+	if IsExcludedTrait(traitType) then
+		return nil, nil, nil, "excluded"
+	end
+
 	if not traitType or traitType == ITEM_TRAIT_TYPE_NONE then
 		return nil, nil, nil, "no-research"
 	end
@@ -736,7 +717,9 @@ function addon:GetItemStatus(bagId, slotIndex)
 	local craftingSkillType, researchLineIndex, traitIndex, reason = self:GetResearchIndices(itemLink)
 	local status
 
-	if reason == "no-research" then
+	if reason == "excluded" then
+		return nil
+	elseif reason == "no-research" then
 		status = {
 			safe = true,
 			noResearch = true,
@@ -880,10 +863,8 @@ function addon:SetupIndicator(control, dataEntryData)
 	end
 
 	indicator.status = status
-	local state = status.overflow and "overflow" or (status.safe and "safe" or "unsafe")
-	local texture, left, right, top, bottom = GetIndicatorIcon(state)
-	indicator:SetTexture(texture)
-	indicator:SetTextureCoords(left, right, top, bottom)
+	indicator:SetTexture(INDICATOR_TEXTURE)
+	indicator:SetTextureCoords(0, 1, 0, 1)
 	if status.overflow then
 		indicator:SetColor(unpack(COLOR_OVERFLOW))
 	elseif status.safe then
@@ -894,7 +875,81 @@ function addon:SetupIndicator(control, dataEntryData)
 	indicator:SetHidden(false)
 end
 
+function addon:InitializeInventoryHooks()
+	local inventories = {}
+	local smithing = _G["SMITHING"]
+	if smithing and smithing.deconstructionPanel then
+		table.insert(inventories, smithing.deconstructionPanel.inventory)
+	end
+
+	local universalDeconstruction = _G["UNIVERSAL_DECONSTRUCTION"]
+	if universalDeconstruction and universalDeconstruction.deconstructionPanel then
+		table.insert(inventories, universalDeconstruction.deconstructionPanel.inventory)
+	end
+
+	for _, inventory in ipairs(inventories) do
+		if inventory and not self.hookedInventories[inventory] then
+			local hasRefreshHook = false
+			for _, methodName in ipairs({ "PerformFullRefresh", "Refresh", "ChangeFilter" }) do
+				if type(inventory[methodName]) == "function" then
+					ZO_PreHook(inventory, methodName, function()
+						addon:InvalidateCaches()
+					end)
+					hasRefreshHook = true
+				end
+			end
+
+			if hasRefreshHook then
+				self.hookedInventories[inventory] = true
+			end
+		end
+	end
+end
+
+function addon:InitializeSmithingModeHook()
+	if self.smithingModeHooked then
+		return
+	end
+
+	local smithing = _G["SMITHING"]
+	if not smithing or type(smithing.SetMode) ~= "function" then
+		return
+	end
+
+	ZO_PreHook(smithing, "SetMode", function(_, mode)
+		if mode == SMITHING_MODE_DECONSTRUCTION then
+			addon:PrepareForDeconstruction(true)
+		end
+	end)
+	self.smithingModeHooked = true
+end
+
+function addon:InitializeSceneHooks()
+	if not SCENE_MANAGER or type(SCENE_MANAGER.GetScene) ~= "function" then
+		return
+	end
+
+	for _, sceneName in ipairs({ "smithing", "universalDeconstructionSceneKeyboard" }) do
+		if not self.hookedScenes[sceneName] then
+			local scene = SCENE_MANAGER:GetScene(sceneName)
+			if scene and type(scene.RegisterCallback) == "function" then
+				local refreshNow = sceneName == "universalDeconstructionSceneKeyboard"
+				scene:RegisterCallback("StateChange", function(_, newState)
+					if newState == SCENE_SHOWING then
+						addon:PrepareForDeconstruction(refreshNow)
+					end
+				end)
+				self.hookedScenes[sceneName] = scene
+			end
+		end
+	end
+end
+
 function addon:InitializeStationHooks()
+	self:InitializeInventoryHooks()
+	self:InitializeSmithingModeHook()
+	self:InitializeSceneHooks()
+
 	for _, listName in ipairs(DECONSTRUCTION_LIST_NAMES) do
 		if not self.hookedLists[listName] then
 			local list = _G[listName]
@@ -910,18 +965,29 @@ function addon:InitializeStationHooks()
 		end
 	end
 
-	if next(self.hookedLists) == nil then
+	if next(self.hookedLists) == nil and not self.stationHookWarningShown then
 		d("[" .. TITLE .. "] Could not find a deconstruction inventory list to hook.")
+		self.stationHookWarningShown = true
+	elseif next(self.hookedLists) ~= nil then
+		self.stationHookWarningShown = false
 	end
 end
 
-function addon:RefreshLists()
-	self.statusCache = {}
-	self.researchItemsByKey = nil
-	self.researchItemAllocations = nil
+function addon:PrepareForDeconstruction(refreshNow)
+	self:InitializeStationHooks()
+	if refreshNow then
+		self:RefreshLists(true)
+	else
+		self:InvalidateCaches()
+	end
+end
+
+function addon:RefreshLists(force)
+	self:InvalidateCaches()
 
 	for _, list in pairs(self.hookedLists) do
-		if type(ZO_ScrollList_RefreshVisible) == "function" then
+		if type(ZO_ScrollList_RefreshVisible) == "function"
+			and (force or self:IsListVisible(list)) then
 			ZO_ScrollList_RefreshVisible(list)
 		end
 	end
@@ -945,13 +1011,41 @@ function addon:OnLckUpdate()
 	end
 end
 
+function addon:OnRefreshEvent()
+	self:InitializeStationHooks()
+	if self.lckReady then
+		self:RefreshLists()
+	end
+end
+
 function addon:TryInitializeFromPlayerActivation()
+	self:InitializeStationHooks()
+
 	if self.lckReady then
 		return
 	end
 
 	if #LCK.GetCharacterList() > 0 then
 		self:OnLckInitialized()
+	end
+end
+
+function addon:RegisterRefreshEvents()
+	EVENT_MANAGER:RegisterForEvent(NAME .. "CraftingStation", EVENT_CRAFTING_STATION_INTERACT, function()
+		addon:PrepareForDeconstruction(false)
+	end)
+
+	for _, eventCode in ipairs({
+		EVENT_INVENTORY_SINGLE_SLOT_UPDATE,
+		EVENT_INVENTORY_FULL_UPDATE,
+		EVENT_SMITHING_TRAIT_RESEARCH_CANCELED,
+		EVENT_SMITHING_TRAIT_RESEARCH_COMPLETED,
+		EVENT_SMITHING_TRAIT_RESEARCH_STARTED,
+		EVENT_SMITHING_TRAIT_RESEARCH_TIMES_UPDATED,
+	}) do
+		EVENT_MANAGER:RegisterForEvent(NAME .. tostring(eventCode), eventCode, function()
+			addon:OnRefreshEvent()
+		end)
 	end
 end
 
@@ -964,6 +1058,8 @@ local function OnAddOnLoaded(_, addonName)
 	addon.vars = ZO_SavedVars:NewAccountWide("ResearchSafeDeconstructionSavedVariables", 1, nil, DEFAULTS)
 	addon:RegisterSlashCommands()
 	addon:RegisterSettings()
+	addon:RegisterRefreshEvents()
+	addon:InitializeStationHooks()
 
 	LCK.RegisterForCallback(NAME, LCK.EVENT_INITIALIZED, function()
 		addon:OnLckInitialized()
