@@ -22,4 +22,4 @@ Overflow markers reserve one copy for each included character that still needs t
 
 The marker is research safety only. It does not decide whether an item is valuable, locked, part of an uncollected set, or otherwise worth keeping. Ornate and intricate items are intentionally left unmarked.
 
-Markers use the transparent ESO circular icon, so the deconstruction dialog's existing background remains visible while only the marker color changes. Markers are refreshed when research or inventory state changes and before a deconstruction page is shown.
+Markers use the transparent, bright ESO hammer icon, so the deconstruction dialog's existing background remains visible while only the marker color changes. Markers are refreshed when research or inventory state changes and before a deconstruction page is shown.

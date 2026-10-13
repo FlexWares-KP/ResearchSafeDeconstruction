@@ -14,8 +14,8 @@ local DECONSTRUCTION_LIST_NAMES = {
 	"ZO_UniversalDeconstructionTopLevel_KeyboardPanelInventoryBackpack",
 }
 
-local INDICATOR_TEXTURE = "esoui/art/buttons/radiobuttondown.dds"
-local INDICATOR_SIZE = 18
+local INDICATOR_TEXTURE = "esoui/art/crafting/smithing_tabicon_improve_up.dds"
+local INDICATOR_SIZE = 32
 local INDICATOR_OFFSET_X = -32
 local CHARACTER_ROW_HEIGHT = 28
 local CHARACTER_STATUS_HEIGHT = 28
@@ -65,10 +65,10 @@ local WEAPON_LINE_BY_TYPE = {
 	[WEAPONTYPE_SHIELD] = 6,
 }
 
-local COLOR_SAFE = { 0.2, 1, 0.2, 1 }
-local COLOR_UNSAFE = { 1, 0.2, 0.2, 1 }
-local COLOR_OVERFLOW = { 1, 0.85, 0.1, 1 }
-local COLOR_RESEARCHING = { 1, 0.75, 0.15, 1 }
+local COLOR_SAFE = { 0.35, 1, 0.35, 1 }
+local COLOR_UNSAFE = { 1, 0.35, 0.35, 1 }
+local COLOR_OVERFLOW = { 1, 0.95, 0.25, 1 }
+local COLOR_RESEARCHING = { 1, 0.85, 0.3, 1 }
 local COLOR_NORMAL = { 1, 1, 1, 1 }
 
 local function IsExcludedTrait(traitType)
