@@ -2,6 +2,10 @@
 
 **Author:** FlexWares Gaming
 
+## AI assistance disclaimer
+
+This project was developed with assistance from AI tools. AI-generated suggestions were reviewed and adapted by the author, but users should verify behavior and report issues through the project repository. The author remains responsible for the final implementation.
+
 This addon marks items in the ESO smithing and universal deconstruction lists:
 
 - A green circular marker means every included crafter either knows the item's trait or is currently researching it.
